@@ -1,0 +1,46 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Loopback only, so tools on your machine (VS Code, Compass, mongosh) can connect
+    # while the database stays unreachable from the network. Remove to keep it internal.
+    ports:
+      - "127.0.0.1:${MONGO_HOST_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build: .
+    # FastAPI backend (api.py). Use `provider_comparison.web` here to run the original server.
+    command: ["python", "-m", "provider_comparison.api", "--host", "0.0.0.0", "--data-dir", "/data/runs"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "${HOST_PORT:-8765}:${PORT:-8765}"
+    environment:
+      PORT: ${PORT:-8765}
+      FIRECRAWL_API_KEY: ${FIRECRAWL_API_KEY:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      MONGODB_URI: mongodb://mongo:27017
+      MONGODB_DB: ${MONGODB_DB:-personalized_gtm}
+      # Optional: set both for HTTPS public access with HTTP Basic auth (demo / DEMO_PASSWORD).
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:-}
+    volumes:
+      # Local working cache; MongoDB is the durable store and refills it on start.
+      - workspace-data:/data/runs
+    env_file:
+      - path: .env
+        required: false
+    restart: unless-stopped
+
+volumes:
+  workspace-data:
+  mongo-data:
